@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+
+# Copyright (c) 2025 Susam Pal
+#
+# You can use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of it, under the terms of the MIT License.  See
+# COPYRIGHT.md for complete details.
+#
+# This software is provided "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# express or implied.  See COPYRIGHT.md for complete details.
+
+
+"""Lispy - A Scheme-like interpreter implementation in Python.
+
+This implementation is based on Peter Norvig's Lispy
+<https://www.norvig.com/lispy.html>.  However, this is not an exact
+reimplementation of Norvig's Lispy.  In fact, the language here, the
+REPL, as well as the interpreter implemented here differ quite a bit
+from Norvig's implementation.
+"""
+
+
+import re
+import readline
+import operator
+
+def tokenize(program):
+    return re.findall(r'\(|\)|[^\s()]+', program)
+
+def parse(program):
+    return syntax_tree(tokenize(program))[0]
+
+def syntax_tree(tokens, i=0):
+    if i == len(tokens):
+        raise SyntaxError('unexpected eof')
+    if tokens[i] == '(':
+        i += 1
+        L = []
+        while tokens[i] != ')':
+            l, i = syntax_tree(tokens, i)
+            L.append(l)
+        return L, i + 1
+    elif tokens[i] == ')':
+        raise SyntaxError('unexpected )')
+    else:
+        return atom(tokens[i]), i + 1
+
+def atom(token):
+    try:
+        return int(token)
+    except ValueError:
+        try:
+            return float(token)
+        except ValueError:
+            return str(token)
+
+env = {
+    '+': operator.add,
+    '-': operator.sub,
+    '*': operator.mul,
+    '/': operator.truediv,
+    '>': operator.gt,
+    '<': operator.lt,
+    '>=': operator.ge,
+    '<=': operator.le,
+    'length': len,
+    'begin': lambda *x: x[-1],
+    'list': lambda *x: list(x),
+}
+
+def eval(expr, env=env):
+    if isinstance(expr, str):
+        return env[expr]
+    elif isinstance(expr, (int, float)):
+        return expr
+    elif expr[0] == 'if':
+        test_form, then_form, else_form = expr[1:]
+        if eval(test_form, env):
+            return eval(then_form, env)
+        else:
+            return eval(else_form, env)
+    elif expr[0] == 'define':
+        symbol, exp = expr[1:]
+        env[symbol] = eval(exp, env)
+    else:
+        proc = eval(expr[0], env)
+        args = [eval(arg, env) for arg in expr[1:]]
+        return proc(*args)
+
+
+def repl():
+    while True:
+        try:
+            val = eval(parse(input('> ')))
+            if val is not None:
+                print(string(val))
+        except Exception as e:
+            print('ERROR:', e)
+
+def string(expr):
+    if isinstance(expr, list):
+        return '(' + ' '.join(string(x) for x in expr) + ')'
+    else:
+        return str(expr)
+
+repl()
+print(eval(parse('(begin (define pi 3.14) (define r 10) (* pi (* r r)))')))
+
+print()
+
+"""
+0  (
+1  begin
+2  (
+3  define
+4  r
+5  10
+6  )
+7  (
+8  *
+9  pi
+10 (
+11 *
+12 r
+13 r
+14 )
+15 )
+16 )
+"""
