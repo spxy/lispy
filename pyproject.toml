@@ -1,0 +1,36 @@
+[project]
+name = "lispy"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "mypy>=1.16.1",
+    "pylint>=3.3.7",
+    "pytest>=8.4.1",
+    "ruff>=0.12.2",
+    "ty>=0.0.1a13",
+]
+
+[tool.ruff.lint]
+select = [
+    "ALL"
+]
+ignore = [
+    "COM812"  # missing-trailing-comma is redundant due to ruff formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"lispy.py" = [
+    "T201",  # print
+]
+"test_*.py" = [
+    "D103",  # undocumented-public-function
+    "S101"  # assert
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
