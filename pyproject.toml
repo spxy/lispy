@@ -29,7 +29,8 @@ ignore = [
 ]
 "test_*.py" = [
     "D103",  # undocumented-public-function
-    "S101"  # assert
+    "S101",  # assert
+    "PLR2004",  # magic-value-comparison
 ]
 
 [tool.ruff.lint.pydocstyle]

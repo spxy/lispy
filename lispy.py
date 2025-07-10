@@ -19,6 +19,7 @@ REPL, as well as the interpreter implemented here differ quite a bit
 from Norvig's implementation.
 """
 
+import functools
 import operator
 import pathlib
 import re
@@ -26,7 +27,14 @@ import readline
 from typing import Any, TypeAlias
 
 HISTORY_FILE: pathlib.Path = pathlib.Path("~/.repl_history").expanduser()
-Atom: TypeAlias = int | float | str
+
+
+Symbol: TypeAlias = str
+Number: TypeAlias = int | float
+Atom: TypeAlias = Symbol | Number
+List: TypeAlias = list
+Expr: TypeAlias = List | Atom
+Env: TypeAlias = dict
 
 
 def tokenize(program: str) -> list[str]:
@@ -34,27 +42,26 @@ def tokenize(program: str) -> list[str]:
     return re.findall(r"\(|\)|[^\s()]+", program)
 
 
-def parse(program: str) -> list[Any]:
+def parse(program: str) -> Expr:
     """Parse the given progrma into a syntax tree."""
-    return syntax_tree(tokenize(program))[0]
+    expr, _ = parse_pos(tokenize(program))
+    return expr
 
 
-def syntax_tree(tokens: list[str], i: int = 0) -> tuple[list[Any] | Atom, int]:
-    """Parse the list of tokens into a syntax tree."""
-    if i == len(tokens):
-        msg = "unexpected eof"
-        raise SyntaxError(msg)
-    if tokens[i] == "(":
-        i += 1
-        tree = []
-        while tokens[i] != ")":
-            sub_tree, i = syntax_tree(tokens, i)
-            tree.append(sub_tree)
-        return tree, i + 1
-    if tokens[i] == ")":
-        msg = "unexpected ')'"
-        raise SyntaxError(msg)
-    return atom(tokens[i]), i + 1
+def parse_pos(tokens: list[str], pos: int = 0) -> tuple[Expr, int]:
+    """Parse the list of tokens into a expression."""
+    if tokens[pos] == "(":
+        pos += 1
+        expr = []
+        while pos < len(tokens) and tokens[pos] != ")":
+            sub_expr, pos = parse_pos(tokens, pos)
+            expr.append(sub_expr)
+        if pos == len(tokens):  # Reached EOF without encountering ')'.
+            raise AbruptEndError
+        return expr, pos + 1
+    if tokens[pos] == ")":  # Unmatched parenthesis remains.
+        raise CloseParenError()
+    return atom(tokens[pos]), pos + 1
 
 
 def atom(token: str) -> Atom:
@@ -68,22 +75,22 @@ def atom(token: str) -> Atom:
             return str(token)
 
 
-env: dict[str, Any] = {
-    "+": operator.add,
-    "-": operator.sub,
-    "*": operator.mul,
-    "/": operator.truediv,
-    ">": operator.gt,
-    "<": operator.lt,
-    ">=": operator.ge,
-    "<=": operator.le,
+top_level_env: dict[str, Any] = {
+    "+": lambda *args: functools.reduce(operator.add, args),
+    "-": lambda *args: functools.reduce(operator.sub, args),
+    "*": lambda *args: functools.reduce(operator.mul, args),
+    "/": lambda *args: functools.reduce(operator.truediv, args),
+    "<": lambda *args: all(x > y for x, y in zip(args, args[1:], strict=False)),
+    ">": lambda *args: all(x < y for x, y in zip(args, args[1:], strict=False)),
+    "<=": lambda *args: all(x <= y for x, y in zip(args, args[1:], strict=False)),
+    ">=": lambda *args: all(x >= y for x, y in zip(args, args[1:], strict=False)),
     "length": len,
     "begin": lambda *x: x[-1],
     "list": lambda *x: list(x),
 }
 
 
-def evaluate(expr: str, env: dict[str, Any] = env) -> int | float:
+def evaluate(expr: str, env: Env = top_level_env) -> int | float:
     """Evaluate the given expression with the given environment."""
     if isinstance(expr, str):
         return env[expr]
@@ -108,7 +115,6 @@ def repl() -> None:
     """Run Lispy REPL."""
     if pathlib.Path(HISTORY_FILE).exists():
         readline.read_history_file(HISTORY_FILE)
-
     while True:
         try:
             line = input("> ")
@@ -116,6 +122,8 @@ def repl() -> None:
             val = evaluate(parse(line))
             if val is not None:
                 print(string(val))
+        except EOFError:
+            break
         except Exception as e:  # noqa: BLE001 blind-except
             print("ERROR:", e)
 
@@ -125,6 +133,24 @@ def string(expr: str) -> str:
     if isinstance(expr, list):
         return "(" + " ".join(string(x) for x in expr) + ")"
     return str(expr)
+
+
+class AbruptEndError(Exception):
+    """Unexpected EOF error."""
+
+    def __init__(self):
+        super().__init__("Unexpected end of input")
+
+
+class CloseParenError(Exception):
+    """Unexpected EOF error."""
+
+    def __init__(self):
+        super().__init__("Unexpected close parenthesis")
+
+
+class ParseError(Exception):
+    """Parse error."""
 
 
 if __name__ == "__main__":
