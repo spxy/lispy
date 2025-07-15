@@ -15,6 +15,9 @@ dev = [
     "ty>=0.0.1a13",
 ]
 
+[tool.ruff]
+extend-exclude = ["norvig/"]
+
 [tool.ruff.lint]
 select = [
     "ALL"
@@ -24,7 +27,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"lispy.py" = [
+"lis.py" = [
     "T201",  # print
 ]
 "test_*.py" = [
@@ -35,3 +38,6 @@ ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
+
+[tool.mypy]
+exclude = ["norvig/"]
