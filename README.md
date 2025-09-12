@@ -59,50 +59,77 @@ As mentioned earlier, the implementation here differs quite a bit from
 Norvig's implementation.  In this project, my Lisp REPL can be
 executed with Python 3.11 or a later version, as follows:
 
-```
+```sh
 python3 lis.py
 ```
 
-The list below presents a non-exhaustive
-list of differences between my implementation of Lispy and Norvig's
-implemnetation of Lispy:
+The list below presents a non-exhaustive list of differences between
+my implementation of Lispy and Norvig's implemnetation of Lispy:
 
  1. My Lispy comes with a suite of unit tests.  The unit tests are
     available at [test/test_lispy.py](test/test_lispy.py).
 
- 2. Norvig's Lispy encounters `EOFError` after reaching the end of the
-    standard input stream.  My Lispy detects this condition and exits
-    gracefully.  For example, while executing the `repl()` function of
-    Norvig's Lispy, if we type <kbd>ctrl</kbd>+<kbd>d</kbd> (say, on a
-    Unix system), the following error occurs:
-
-    ```
-    Traceback (most recent call last):
-      File "<string>", line 1, in <module>
-      File "/Users/susam/git/lispy/norvig/lis.py", line 97, in repl
-        val = eval(parse(input(prompt)))
-                         ^^^^^^^^^^^^^
-    EOFError
-    make: *** [run-norvig-lispy] Error 1
-    ```
-
-    My Lispy exits gracefully instead:
+ 2. My Lispy exits gracefully on reaching the end of the standard input stream:
 
     ```
     > ^D
     $
     ```
 
- 3. My Lispy explicitly detects unclosed parentheses and raises a
-    custom error.  For example consider the following Lispy program:
+    Norvig's Lispy encounters `EOFError` after reaching the end of the
+    standard input stream.
 
-    ```lisp
-    (+ 1 2
+    ```
+    lis.py> ^D
+    Traceback (most recent call last):
+      File "<string>", line 1, in <module>
+      File "/Users/susam/git/lispy/norvig/lis.py", line 97, in repl
+        val = eval(parse(input(prompt)))
+                         ^^^^^^^^^^^^^
+    EOFError
+    ```
+
+ 3. My Lispy comes with `readline` support. So the usual GNU Readline
+    or BSD Editline key sequences may be used.  For example, the
+    <kbd>↑</kbd> key (the up arrow key) or
+    <kbd>ctrl</kbd>+<kbd>p</kbd> brings back the previous input.
+
+    ```
+    > (+ 1 2)
+    3
+    > (+ 1 2)
+    ```
+
+    Norvig's Lispy does not have `readline` support.
+
+    ```
+    lis.py> (+ 1 2)
+    3
+    lis.py> ^[[A
+    ```
+
+ 4. My Lispy explicitly detects incomplete top-level forms and waits
+    for more input:
+
+    ```
+    > (+ 1 2
+    ?
+    ```
+
+    The `?` prompt indicates that there is an incomplete top-level
+    form.  The top-level form may then be completed and evaluated as
+    shown below:
+
+    ```
+    > (+ 1 2
+    ?    3 4)
+    10
     ```
 
     Norvig's Lispy produces the following error while reading this program:
 
     ```
+    lis.py> (+ 1 2
     Traceback (most recent call last):
       File "<string>", line 1, in <module>
       File "/Users/susam/git/lispy/norvig/lis.py", line 97, in repl
@@ -117,8 +144,90 @@ implemnetation of Lispy:
     IndexError: list index out of range
     ```
 
-    Susam's Lispy produces the following error instead:
+ 4. My Lispy can evaluate multiple top-level forms entered in a single
+    line of input:
 
     ```
-    ERROR: Unexpected end of input
+    > (+ 1 2)(+ 3 4)(+ 5 6)
+    3
+    7
+    11
     ```
+
+    Norvig's Lispy evaluates only the first top-level form when
+    multiple forms are entered in a single line of input:
+
+    ```lisp
+    lis.py> (+ 1 2)(+ 3 4)(+ 5 6)
+    3
+    ```
+
+ 5. When there are multiple complete top-level forms followed by an
+    incomplete top-level-form, My Lispy evaluates all the top-level
+    forms and waits for more input as shown below:
+
+    ```
+    > (+ 1 2)(+ 3 4)(+
+    3
+    7
+    ?
+    ```
+
+    The trailing incomplete form may then be completed and evaluated as follows:
+
+    ```
+    > (+ 1 2)(+ 3 4)(+
+    3
+    7
+    ? 5 6)
+    11
+    ```
+
+    Since Norvig's Lispy evaluates only the first top-level form, all
+    subsequent top-level forms, including the incomplete one, are
+    ignored:
+
+    ```
+    lis.py> (+ 1 2)(+ 3 4)(+
+    3
+    ```
+
+ 6. For various arithmetic functions, My Lispy accepts arbitrary
+    number of arguments:
+
+    ```
+    > (+)
+    0
+    > (+ 1)
+    1
+    > (+ 1 2)
+    3
+    > (+ 1 2 3)
+    6
+    > (-)
+    0
+    > (- 10)
+    -10
+    > (- 10 1)
+    9
+    > (- 10 1 2)
+    7
+    ```
+
+    Norvig's Lispy accepts exactly two arguments instead:
+
+    ```
+    lis.py> (+)
+    Traceback (most recent call last):
+      File "<string>", line 1, in <module>
+      File "/Users/susam/git/lispy/norvig/lis.py", line 97, in repl
+        val = eval(parse(input(prompt)))
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+      File "/Users/susam/git/lispy/norvig/lis.py", line 132, in eval
+        return proc(*args)
+               ^^^^^^^^^^^
+    TypeError: add expected 2 arguments, got 0
+    make: *** [nlis] Error 1
+    ```
+
+<!-- TODO: readline -->

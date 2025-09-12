@@ -2,14 +2,25 @@
 
 import pytest
 
-from lis import UnclosedParenError, UnexpectedCloseParenError, parse, tokenize
+from lis import (
+    UnclosedParenError,
+    UnexpectedCloseParenError,
+    UnknownSymbolError,
+    evaluate,
+    parse,
+    tokenize,
+)
 
 
 def test_tokenize() -> None:
+    assert tokenize("") == []
+    assert tokenize("    ") == []
     assert tokenize("(+ 1 2)") == ["(", "+", "1", "2", ")"]
 
 
 def test_parse() -> None:
+    assert parse("") == []
+    assert parse("  ") == []
     assert parse("+") == ["+"]
     assert parse("foo") == ["foo"]
     assert parse("1") == [1]
@@ -32,3 +43,10 @@ def test_parse_paren_error() -> None:
         parse(")")
     with pytest.raises(UnexpectedCloseParenError):
         parse("(+ 1 2))")
+
+
+def test_evaluate_unknown_symbol_error() -> None:
+    with pytest.raises(UnknownSymbolError):
+        evaluate(parse("foo")[0])
+    with pytest.raises(UnknownSymbolError):
+        evaluate(parse("(foo 1 2)")[0])

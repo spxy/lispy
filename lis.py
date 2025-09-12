@@ -26,7 +26,7 @@ import pathlib
 import re
 import readline
 from collections.abc import Callable
-from typing import Any, TypeAlias
+from typing import TypeAlias
 
 HISTORY_FILE: pathlib.Path = pathlib.Path("~/.repl_history").expanduser()
 
@@ -35,7 +35,7 @@ Symbol: TypeAlias = str
 Number: TypeAlias = int | float
 Atom: TypeAlias = Symbol | Number
 List: TypeAlias = list
-Expr: TypeAlias = List | Atom
+Expr: TypeAlias = Atom | List
 Env: TypeAlias = dict
 
 
@@ -44,30 +44,40 @@ def tokenize(program: str) -> list[str]:
     return re.findall(r"\(|\)|[^\s()]+", program)
 
 
-def parse(program: str) -> list[Expr]:
-    """Parse the given program into a list of expressions."""
-    tokens = tokenize(program)
+def read_form(tokens: list[str]) -> tuple[list[str], list[str]]:
+    parens_open = 0
+    end_pos = 0
     pos = 0
-    exprs = []
     while pos < len(tokens):
-        expr, pos = read_tokens(tokenize(program), pos)
-        exprs.append(expr)
-    return exprs
+        token = tokens[pos]
+        if token == "(":
+            parens_open += 1
+        elif token == ")":
+            parens_open -= 1
+        pos += 1
+        # If parens_open == 0, we have a complete top-level form.  If
+        # parens_open < 0, we have an unmatched closing parenthesis.
+        # In both cases we return tokens[:pos] to the reader, so that
+        # the reader can either process the complete form or report
+        # error for the unmatched parenthesis.
+        if parens_open <= 0:
+            return tokens[:pos], tokens[pos:]
+    return None, tokens
 
 
-def read_tokens(tokens: list[str], pos: int = 0) -> tuple[Expr, int]:
+def read_expr(tokens: list[str], pos: int = 0) -> tuple[Expr, int]:
     """Parse the list of tokens into an expression."""
     if tokens[pos] == "(":
         pos += 1
         expr = []
         while pos < len(tokens) and tokens[pos] != ")":
-            sub_expr, pos = read_tokens(tokens, pos)
+            sub_expr, pos = read_expr(tokens, pos)
             expr.append(sub_expr)
         if pos == len(tokens):  # Reached EOF without encountering ')'.
             raise UnclosedParenError
         return expr, pos + 1
     if tokens[pos] == ")":  # Unmatched parenthesis remains.
-        raise UnexpectedCloseParenError
+        raise UnmatchedCloseParenError
     return atom(tokens[pos]), pos + 1
 
 
@@ -82,13 +92,13 @@ def atom(token: str) -> Atom:
             return str(token)
 
 
-top_level_env: dict[str, Any] = {
-    "+": lambda *args: functools.reduce(operator.add, args),
-    "-": lambda *args: functools.reduce(operator.sub, args),
-    "*": lambda *args: functools.reduce(operator.mul, args),
-    "/": lambda *args: functools.reduce(operator.truediv, args),
-    "<": lambda *args: all(x > y for x, y in itertools.pairwise(args)),
-    ">": lambda *args: all(x < y for x, y in itertools.pairwise(args)),
+top_level_env: dict[str, Callable] = {
+    "+": lambda *args: functools.reduce(operator.add, args, 0),
+    '-': lambda *args: functools.reduce(operator.sub, (0,) + args if len(args) < 2 else args),
+    "*": lambda *args: functools.reduce(operator.mul, args, 1),
+    "/": lambda *args: functools.reduce(operator.truediv, args, 1),
+    "<": lambda *args: all(x < y for x, y in itertools.pairwise(args)),
+    ">": lambda *args: all(x > y for x, y in itertools.pairwise(args)),
     "<=": lambda *args: all(x <= y for x, y in itertools.pairwise(args)),
     ">=": lambda *args: all(x >= y for x, y in itertools.pairwise(args)),
     "length": len,
@@ -99,9 +109,12 @@ top_level_env: dict[str, Any] = {
 
 def evaluate(expr: Expr, env: Env = top_level_env) -> str | int | float | Callable:
     """Evaluate the given expression with the given environment."""
-    if isinstance(expr, str):
-        return env[expr]
-    if isinstance(expr, (int, float)):
+    if isinstance(expr, Symbol):
+        value = env.get(expr)
+        if value is None:
+            raise UnknownSymbolError(expr)
+        return value
+    if isinstance(expr, Number):
         return expr
     op = expr[0]
     if op == "if":
@@ -113,9 +126,11 @@ def evaluate(expr: Expr, env: Env = top_level_env) -> str | int | float | Callab
         symbol, exp = expr[1:]
         env[symbol] = evaluate(exp, env)
         return env[symbol]
-    if callable(op):
+    proc = evaluate(op, env)
+    if callable(proc):
         args = [evaluate(arg, env) for arg in expr[1:]]
-        return op(*args)
+        return proc(*args)
+    print(":::: Bad expression:", expr)
     raise BadExprError(expr)
 
 
@@ -123,19 +138,25 @@ def repl() -> None:
     """Run Lispy REPL."""
     if pathlib.Path(HISTORY_FILE).exists():
         readline.read_history_file(HISTORY_FILE)
+    extra_tokens = []
     while True:
         try:
-            line = input("> ")
+            line = input("? " if extra_tokens else "> ")
             readline.write_history_file(HISTORY_FILE)
-            for expr in parse(line):
+            while True:
+                tokens, extra_tokens = read_form(extra_tokens + tokenize(line))
+                print(":::: token:", tokens, extra_tokens)
+                if tokens is None:
+                    break
+                expr, _ = read_expr(tokens)
+                print(":::: evaluating expr:", expr)
                 val = evaluate(expr)
                 if val is not None:
                     print(str(val))  # :::: Needs to be changed to lisp_str.
         except EOFError:
             break
-        except Exception as e:  # noqa: BLE001 blind-except
+        except Exception as e:  # noqa: BLE001 (blind-except)
             print("ERROR:", e)
-            raise e
 
 
 def string(expr: str) -> str:
@@ -153,20 +174,28 @@ class UnclosedParenError(Exception):
         super().__init__("Unexpected end of input")
 
 
-class UnexpectedCloseParenError(Exception):
-    """Unclosed parenthesis error."""
+class UnmatchedCloseParenError(Exception):
+    """Unmatched closed parenthesis error."""
 
     def __init__(self) -> None:
         """Initialise instance of this class."""
-        super().__init__("Unexpected close parenthesis")
+        super().__init__("Unmatched close parenthesis")
 
 
 class BadExprError(Exception):
     """Bad expression error."""
 
-    def __init___(self, expr: Expr) -> None:
+    def __init__(self, expr: Expr) -> None:
         """Initialise instance of this class."""
         super().__init__(f"Bad expression: {expr}")
+
+
+class UnknownSymbolError(Exception):
+    """Unknown symbol error."""
+
+    def __init__(self, expr: Expr) -> None:
+        """Initialise instance of this class."""
+        super().__init__(f"Unknown symbol: {expr}")
 
 
 if __name__ == "__main__":
